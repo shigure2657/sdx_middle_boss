@@ -1,0 +1,27 @@
+<html>
+<body>
+<pre>
+<h1>Build Log</h1>
+<h3>
+--------------------Configuration: mfc_sample - Win32 Debug--------------------
+</h3>
+<h3>Command Lines</h3>
+Creating temporary file "C:\DOCUME~1\時雨\LOCALS~1\Temp\RSPB1.tmp" with contents
+[
+/nologo /MDd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_AFXDLL" /D "_MBCS" /Fp"Debug/mfc_sample.pch" /Yu"stdafx.h" /Fo"Debug/" /Fd"Debug/" /FD /GZ   /c 
+"C:\Documents and Settings\時雨\デスクトップ\win32_2\mfc_sample\mfc_sample.cpp"
+]
+Creating command line "cl.exe @"C:\DOCUME~1\時雨\LOCALS~1\Temp\RSPB1.tmp"" 
+<h3>Output Window</h3>
+Compiling...
+mfc_sample.cpp
+c:\documents and settings\時雨\デスクトップ\win32_2\mfc_sample\mfc_sample.cpp(4) : fatal error C1083: Cannot open precompiled header file: 'Debug/mfc_sample.pch': No such file or directory
+Error executing cl.exe.
+
+
+
+<h3>Results</h3>
+mfc_sample.obj - 1 error(s), 0 warning(s)
+</pre>
+</body>
+</html>
