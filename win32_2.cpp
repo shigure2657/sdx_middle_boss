@@ -4,16 +4,13 @@
 #include "resource.h"
 
 void ascii_to_hex(char* byte, char* buffer, int n);
+void hex_to_ascii(char* str, char* out, int n);
 int how_many_bytes_remain();
-void insert_mboss();
+int insert_mboss();
 
-LPCTSTR items[] = {
-	"dog",
-	"cat",
-	"rabbit",
-	"fox",
-	"monkey",
-	"hamster"
+struct middle_boss_list {
+    LPCTSTR name;
+    int id;
 };
 
 FILE *fp;
@@ -21,8 +18,8 @@ long file_size;
 int file_open_flag = 0;
 int map_size = 0;
 int write_size = 0;
+int middle_bytes = 0;   // 追加前の中ボスデータのバイト数
 char middle_boss[] = "110001000000000001004374016C00FFFF";
-//LPSTR x_axis = TEXT("0");
 char x_axis[] = "0";
 char y_axis[] = "0";
 
@@ -90,8 +87,9 @@ long dummy_space_search()
 	char *address;
 	char offset[] = "";
     memset(dummy, '\0', map_size*2 + 1);
-    memset(dummy, 'F', map_size*2 + 1);
+    memset(dummy, 'F', map_size*2 + 2);
 	dummy[map_size*2+1]= '\0';
+
     // メモリ確保して全データ読み込み
      char* buffer = ( char* )malloc(file_size);
      char* buffer2 = ( char* )malloc(file_size*2);
@@ -101,17 +99,36 @@ long dummy_space_search()
         return 0 ;
     }
 	fseek(fp,0, SEEK_SET);
-    fread(buffer, 1, file_size, fp);
+     // ファイル先頭から0x300000バイト先に移動する
+    if(fseek(fp, 0x300000, SEEK_SET))
+    {
+         MessageBox(NULL, "fseek エラー","情報", MB_OK);
+        return 0;  // 異常終了
+    }
+
+    fread(buffer, 0xFFFFF, 1, fp);
     ascii_to_hex(buffer,buffer2,file_size);
     address = strstr(buffer2,dummy);
-	//sprintf(offset,"%X",(address - &buffer2[0])/2);
-    //MessageBox(NULL, offset, "情報", MB_OK);
+    
+	if ( address == NULL ) {
+        MessageBox(NULL, "ダミーデータを見つけられませんでした。","情報", MB_OK);
+		return 0;
+	}
+
+    //MessageBox(NULL, offset, "オフセット", MB_OK);
     return (address - &buffer2[0])/2;
 }
 
-void set_dummy_bytes()
+void set_dummy_bytes(long address)
 {
-    
+     char* buffer1 = ( char* )malloc(map_size*2);
+     char* buffer2 = ( char* )malloc(map_size + 1);
+	 memset(buffer1 , 'F', map_size*2);
+     hex_to_ascii(buffer1,buffer2,map_size);
+     fseek(fp,address, SEEK_SET);
+     fwrite(buffer2,map_size, 1,fp);
+	 free(buffer1);
+	 free(buffer2);
 }
 
 void ascii_to_hex(char* byte, char* buffer, int n)
@@ -138,14 +155,14 @@ void hex_to_ascii(char* str, char* out, int n)
 long seek_middle(char *map_data)
 {
 	int n = 0;
-	int i = 116;
+	int i = 116;  // 移動データまでは（おそらく）58バイト固定
     char byte[32];
 	char byte2[32];
     char* buffer = ( char* )malloc(map_size*2+1);
 
-    ascii_to_hex(map_data,buffer,map_size);
+    ascii_to_hex(map_data,buffer,map_size);    // asciiから16進数へ変換
     buffer[map_size] = '\0';
-    byte2[0] = buffer[i + 2];
+    byte2[0] = buffer[i + 2];                  //上位バイトと下位バイトが逆順になっている
 	byte2[1] = buffer[i + 3];
 	byte2[2] = buffer[i];
 	byte2[3] = buffer[i + 1];
@@ -164,62 +181,112 @@ long seek_middle(char *map_data)
 	byte2[3] = buffer[i + 1 + (2*n)];
 	byte2[4] = '\0';
     MessageBox(NULL, byte2, "情報", MB_OK);
-
+    free(buffer);
 	return (i + (2*n));
 }
+
+// 追加前の中ボスデータのサイズ（なにもはいってないと、04 00 FF FFで４バイトとなる）
+int size_of_middle_boss(int pos, char* map_data)
+{
+    int position = pos;
+	char middle_bytes[4];
+	char out[4];
+	char* buffer = ( char* )malloc(map_size*2+1);
+	ascii_to_hex(map_data,buffer,map_size);
+	strncpy(middle_bytes, buffer + position, 4);
+    out[0] = middle_bytes[2];
+    out[1] = middle_bytes[3];
+	out[2] = middle_bytes[0];
+	out[3] = middle_bytes[1];
+	out[4] = '\0';
+    int byte = atoi(out);
+	free(buffer);
+	return byte;
+}
+
 char* create_map()
 {
 	long offset = 0x30244A;  // 春風とともに
 	long insert_pos = 10;
+	
     
     long new_size = map_size + strlen(middle_boss);
     char* buffer = ( char* )malloc(map_size+1);
-	char* buffer2 = ( char* )malloc(map_size*2+1);
-    char* new_buffer = (char* ) malloc(new_size);
-    char* new_buffer2 = (char* ) malloc(new_size*2);
+	char* buffer2 = ( char* )malloc(map_size*2+1);  // 16進数に変換するとasciiコードよりも２倍の文字数になる為 +1はnull文字
+    char* new_buffer = (char* ) malloc(new_size + 1);
+    char* new_buffer2 = (char* ) malloc(new_size*2 + 1);  
 
-    fseek(fp,offset, SEEK_SET);
-    fread(buffer, 1, map_size, fp);
-    insert_pos = seek_middle(buffer);
-    memcpy(new_buffer, buffer, insert_pos); 
-	ascii_to_hex(new_buffer,new_buffer2,new_size);
-	memcpy(new_buffer2 + insert_pos, middle_boss, strlen(middle_boss));
-    ascii_to_hex(buffer,buffer2,new_size);
-	memcpy(new_buffer2 + insert_pos + strlen(middle_boss), buffer2 + insert_pos,map_size*2 - insert_pos);
-    new_buffer2[new_size*2 - strlen(middle_boss)] = '\0';
-    write_size = new_size*2 - strlen(middle_boss);
-
+    fseek(fp,offset, SEEK_SET);							// マップデータの位置までファイルポインタを移動
+    fread(buffer, 1, map_size, fp);						// map_sizeの大きさのマップデータをbufferへ読み込み
+    insert_pos = seek_middle(buffer);					// buffer(マップデータ)内の中ボスデータを追加するアドレスを調べる
+    middle_bytes = size_of_middle_boss(insert_pos,buffer);
+    memcpy(new_buffer, buffer, insert_pos);				// insert_pos(bufferの最初の位置から１６進数で何バイト中ボスを入れる位置まであるか）分だけbufferからnew_bufferへデータをコピー
+	ascii_to_hex(new_buffer,new_buffer2,new_size);		// new_bufferを16進数へ変換して new_buffer2へ入れる
+	memcpy(new_buffer2 + insert_pos, middle_boss, strlen(middle_boss));			// insert_posの位置へmiddle_boss(中ボスデータ)を、strlenの文字分だけコピー
+    ascii_to_hex(buffer,buffer2,new_size);										// buffer (asciiのままのマップデータ)をbuffer2へasciiへ変換して入れる
+	memcpy(new_buffer2 + insert_pos + strlen(middle_boss), buffer2 + insert_pos + 2*middle_bytes ,map_size*2 - insert_pos - 2*middle_bytes);    //  insert_pos＋中ボスデータの位置に、追加する前のマップデータ+insert_pos + middle_bytesからの残りのマップデータを入れる
+    new_buffer2[new_size*2 - strlen(middle_boss) - 2*middle_bytes] = '\0';	// middle_bossのサイズも２倍になってるので増えた分だけ(strlen(middle_boss)分だけ減らす
+    write_size = new_size*2 - strlen(middle_boss) - 2*middle_bytes;
+    free(buffer);
+	free(buffer2);
 	return new_buffer2;
 }
 
-void change_index()
+// マップデータのアドレスを変更する
+void change_index(int offset)
 {
-    
+	char index[5];
+	char index_out[8];
+	char dummy_offset[8];
+	char dummy_offset_out[5];
+    long index_offset = 0x3F009E;
+    fseek(fp,index_offset, SEEK_SET);
+	fread(index, 1, 4, fp);
+	index[5] = '\0';
+    ascii_to_hex(index,index_out,4);
+    index_out[8] = '\0';
+	 itoa(offset,dummy_offset,16);
+	 index_out[0] = dummy_offset[4];
+	 index_out[1] = dummy_offset[5];
+	 index_out[2] = dummy_offset[2];
+	 index_out[3] = dummy_offset[3];
+     index_out[5] = dummy_offset[1];
+	hex_to_ascii(index_out,dummy_offset_out,8);
+    dummy_offset[6] = '\0';
+	MessageBox(NULL, dummy_offset_out, "情報", MB_OK);
+    fseek(fp,index_offset, SEEK_SET);
+	fwrite(dummy_offset_out,4,1,fp);
 }
 
-void insert_mboss()
+int insert_mboss()
 {
-     long offset = 0;
+     int offset = 0;
      char* write_address;
+	 long map_address = 0x30244A;
 
     if(how_many_bytes_remain() > 17)
 	{
-       
+       return 0;
 	}
 	else
 	{
+		// マープデータのサイズの大きさのダミーデータ(0xFFで構成されたデータ)を検索
        offset = dummy_space_search();
        char temp[]  ="";
-
+        
 	   if(offset == 0)
-		   return;
-
+		   return 0;
+       offset += 0x300000; // 0x300000以降のアドレスしかマップデータを入れられない？
+	   offset++; // 1増やして1バイト上書きしないように
 	   write_address = create_map();
-       char* buffer = ( char* )malloc(map_size/2+1);
-	   hex_to_ascii(write_address,buffer,map_size);
-       MessageBox(NULL, write_address, "情報", MB_OK);
+       char* buffer = ( char* )malloc(map_size+strlen(middle_boss)/2);
+	   hex_to_ascii(write_address,buffer,map_size+strlen(middle_boss) - middle_bytes);
+      // MessageBox(NULL, write_address, "情報", MB_OK);
        fseek(fp,offset, SEEK_SET);
-	   fwrite(buffer,map_size,1,fp);
+	   fwrite(buffer,map_size + (strlen(middle_boss)/2) - middle_bytes,1,fp);
+	   set_dummy_bytes(map_address);
+	   change_index(offset);
+	   return 1;
 	}
 
 }
@@ -295,7 +362,6 @@ int how_many_bytes_remain()
 	}
 	char temp[32];
 	sprintf(temp,"%d", count);
-    //MessageBox(NULL, temp, "情報", MB_OK);
 	return count;
 }
 
@@ -312,14 +378,22 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 	char y_hex[4];
 	char out_x[5];
 	char out_y[5];
+	char id[4];
+	int size_x, size_y;
+	int i = 0;
+	int l = 0;
+    int value_x, value_y;
+    int swapped_x,swapped_y;
 
-	int i;
+	struct middle_boss_list list[7] = {{"アイアンマム",41},{"ジュキッド", 42},{"ポピーブロスSr", 43},{"コックカワサキ",44},{"Mr.フロスティ",45},
+	{"ボンカース",46}, {"バグジー",47}};
+
     switch (message)
     {
     case WM_INITDIALOG:
-        for ( i = 0; i < sizeof(items) / sizeof(items[0]); i++)
+        for ( i = 0; i < sizeof(list) / sizeof(list[0]); i++)
 		{
-		    SendMessage(combo, CB_ADDSTRING, 0, (LPARAM)items[i]);
+		    SendMessage(combo, CB_ADDSTRING, 0, (LPARAM)list[i].name);
 		}
         break;
     case WM_COMMAND:
@@ -333,55 +407,45 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 		if( LOWORD(wParam) == IDC_BUTTON2)
 		{
             load_map();
-			insert_mboss();
+			if(insert_mboss())
+            {
+                 MessageBox(NULL, "中ボスデータを追加しました。", "情報", MB_OK);
+			}
+			else
+			{
+                 MessageBox(NULL, "中ボスデータの追加に失敗しました。", "エラー", MB_ICONWARNING | MB_OK);
+			}
+			//change_index();
 		}
         if( LOWORD(wParam) == IDC_BUTTON3)
 		{
             GetDlgItemTextA(hDlg,IDC_EDIT1,x_axis,4);
             GetDlgItemTextA(hDlg,IDC_EDIT2,y_axis,4);
+			int index = (int)SendMessage(combo, CB_GETCURSEL, 0, 0);
+			itoa(list[index].id,id,10);
+			//MessageBox(NULL, id, "中ボスid", MB_OK);
+			
             x = strtol(x_axis, &endp, 10);
             y = strtol(y_axis, &endp, 10);
             sprintf(x_hex,"%x",x);
             sprintf(y_hex,"%x",y);
+			//MessageBox(NULL, x_axis, "y座標", MB_OK);
+            value_x = strtoul(x_hex, NULL, 16);
+            value_y = strtoul(y_hex, NULL, 16);
+
+     
+            swapped_x = ((value_x & 0xFF) << 8) | ((value_x >> 8) & 0xFF);
+			swapped_y = ((value_y & 0xFF) << 8) | ((value_y >> 8) & 0xFF);
+			sprintf(out_x, "%04X", swapped_x);
+			sprintf(out_y, "%04X", swapped_y);
+			MessageBox(NULL, out_x, "x座標", MB_OK);
+            sprintf(middle_boss,"11000100000000000100%s%s%sFFFF",id,out_x,out_y);
             
-			for (int i = 0; i < 4; i++) {
-                if(x_hex[i] != '\0')
-					out_x[3 - i] = x_hex[i];
-				else {
-					while(i < 4) {
-                        out_x[3 - i] = '0';
-						i++;
-					}
-				}
-			}
-			i = 0;
-            for (i = 0; i < 4; i++) {
-			    if(y_hex[i] != '\0')
-					out_y[3 - i] = y_hex[i];
-				else {
-					while(i < 4) {
-                        out_y[3 - i] = '0';
-						i++;
-					}
-				}
-			}
-            out_x[4] = '\0';
-            out_y[4] = '\0';
-            sprintf(middle_boss,"11000100000000000100%s%s00FFFF",out_x,out_y);
-            MessageBox(NULL, middle_boss, "情報", MB_OK);
 		}
-		switch(LOWORD(wParam)) {
-		    case IDC_BUTTON1:
+		if (LOWORD(wParam) == IDC_BUTTON1) 
+		{
 		   if( file_open())
-                SetDlgItemTextA(hDlg, IDC_STATIC2, rom_name);
-			//SetDlgItemTextA(hDlg,IDC_STATIC,"SAMPLE");
-			break;
-			case IDC_BUTTON2:
-           // MessageBox(NULL,"!", "情報", MB_OK);
-			//load_map();
-            //dummy_space_search();
-            //how_many_bytes_remain();
-            break;
+               SetDlgItemTextA(hDlg, IDC_STATIC2, rom_name);
 		}
         break;
     }
