@@ -3,14 +3,22 @@
 #include <stdlib.h>
 #include "resource.h"
 
+#define MAP_NUMBERS 318
+
 void ascii_to_hex(char* byte, char* buffer, int n);
 void hex_to_ascii(char* str, char* out, int n);
-int how_many_bytes_remain();
+int how_many_bytes_remain(HWND hDlg);
 int insert_mboss();
+int map_address(HWND hDlg);
 
 struct middle_boss_list {
     LPCTSTR name;
     int id;
+};
+
+struct map_data {
+    LPCSTR name;
+	int address;
 };
 
 FILE *fp;
@@ -180,7 +188,7 @@ long seek_middle(char *map_data)
 	byte2[2] = buffer[i + (2*n)];
 	byte2[3] = buffer[i + 1 + (2*n)];
 	byte2[4] = '\0';
-    MessageBox(NULL, byte2, "情報", MB_OK);
+    MessageBox(NULL, byte2, "seek_middle", MB_OK);
     free(buffer);
 	return (i + (2*n));
 }
@@ -199,16 +207,23 @@ int size_of_middle_boss(int pos, char* map_data)
 	out[2] = middle_bytes[0];
 	out[3] = middle_bytes[1];
 	out[4] = '\0';
-    int byte = atoi(out);
+    //int byte = atoi(out);
+	MessageBox(NULL, out, "size of middle boss", MB_OK);
+	int byte = (int)strtol(out, NULL, 16);
 	free(buffer);
 	return byte;
 }
 
-char* create_map()
+char* create_map(HWND hDlg)
 {
-	long offset = 0x30244A;  // 春風とともに
+	long offset = 0;  // 春風とともに
 	long insert_pos = 10;
+	char addr[8];
 	
+	HWND combo = GetDlgItem(hDlg, IDC_COMBO1);
+    int index = (int)SendMessage(combo, CB_GETCURSEL, 0, 0);
+	SendMessage(combo, CB_GETLBTEXT, index, (LPARAM)addr);  // コンボボックスから文字列を取得
+    offset = strtol(addr, NULL, 16); 
     
     long new_size = map_size + strlen(middle_boss);
     char* buffer = ( char* )malloc(map_size+1);
@@ -224,11 +239,12 @@ char* create_map()
 	ascii_to_hex(new_buffer,new_buffer2,new_size);		// new_bufferを16進数へ変換して new_buffer2へ入れる
 	memcpy(new_buffer2 + insert_pos, middle_boss, strlen(middle_boss));			// insert_posの位置へmiddle_boss(中ボスデータ)を、strlenの文字分だけコピー
     ascii_to_hex(buffer,buffer2,new_size);										// buffer (asciiのままのマップデータ)をbuffer2へasciiへ変換して入れる
-	memcpy(new_buffer2 + insert_pos + strlen(middle_boss), buffer2 + insert_pos + 2*middle_bytes ,map_size*2 - insert_pos - 2*middle_bytes);    //  insert_pos＋中ボスデータの位置に、追加する前のマップデータ+insert_pos + middle_bytesからの残りのマップデータを入れる
-    new_buffer2[new_size*2 - strlen(middle_boss) - 2*middle_bytes] = '\0';	// middle_bossのサイズも２倍になってるので増えた分だけ(strlen(middle_boss)分だけ減らす
+	memcpy(new_buffer2 + insert_pos + strlen(middle_boss), buffer2 + 
+	insert_pos + 2*middle_bytes ,map_size*2 - insert_pos - 2*middle_bytes);		//  insert_pos＋中ボスデータの位置に、追加する前のマップデータ+insert_pos + middle_bytesからの残りのマップデータを入れる
+    new_buffer2[new_size*2 - strlen(middle_boss) - 2*middle_bytes] = '\0';		// middle_bossのサイズも２倍になってるので増えた分だけ(strlen(middle_boss)分だけ減らす
     write_size = new_size*2 - strlen(middle_boss) - 2*middle_bytes;
-    free(buffer);
-	free(buffer2);
+    //free(buffer);
+	//free(buffer2);
 	return new_buffer2;
 }
 
@@ -258,40 +274,108 @@ void change_index(int offset)
 	fwrite(dummy_offset_out,4,1,fp);
 }
 
-int insert_mboss()
+// マップデータのアドレスを入手
+int map_address(HWND hDlg)
+{
+	int i;
+	char index[5];
+	char index_out[8];
+	char address[8];
+    int index_offset_first = 0x3F009E;
+	HWND combo = GetDlgItem(hDlg, IDC_COMBO1);
+    //struct map_data map[MAP_NUMBERS];
+
+    for (i = 0; i < MAP_NUMBERS; i++)
+	{
+        fseek(fp,0x3F009E + 4*i, SEEK_SET);
+		fread(index, 1, 4, fp);
+	    index[5] = '\0';
+	    ascii_to_hex(index,index_out,4);
+        address[0] = '3';
+	    address[1] = index_out[5];
+	    address[2] = index_out[2];
+        address[3] = index_out[3];
+ 	    address[4] = index_out[0];
+	    address[5] = index_out[1];
+	    address[6] = '\0';
+		SendMessage(combo, CB_ADDSTRING, 0, (LPARAM)address);
+	}
+
+    fseek(fp,index_offset_first, SEEK_SET);
+    fread(index, 1, 4, fp);
+	index[5] = '\0';
+	ascii_to_hex(index,index_out,4);
+    address[0] = '3';
+	address[1] = index_out[5];
+	address[2] = index_out[2];
+    address[3] = index_out[3];
+	address[4] = index_out[0];
+	address[5] = index_out[1];
+	address[6] = '\0';
+
+    MessageBox(NULL, address, "map address", MB_OK);
+	
+	int out = strtol(address, NULL, 16);
+
+	return out;
+}
+
+int insert_mboss(HWND hDlg)
 {
      int offset = 0;
+	 int dummy_flag = 0;
      char* write_address;
-	 long map_address = 0x30244A;
+	 char addr[8];
+	 int map_addr = map_address(hDlg);
+     write_address = create_map(hDlg);
+    
+	HWND combo = GetDlgItem(hDlg, IDC_COMBO1);
+    int index = (int)SendMessage(combo, CB_GETCURSEL, 0, 0);
+	SendMessage(combo, CB_GETLBTEXT, index, (LPARAM)addr);  // コンボボックスから文字列を取得
+    map_addr = strtol(addr, NULL, 16);   
+	// 文字列をlong型の１６進数に変換
 
-    if(how_many_bytes_remain() > 17)
+    // マップデータの後に何バイトダミーデータが残っているか
+    if(how_many_bytes_remain(hDlg) > 17)
 	{
-       return 0;
+	    offset = map_addr;
+       //return 0;
+	} // 0x11バイト以下の場合
+	// 既に中ボスが一体以上入っている
+	else if (middle_bytes >= 0x11)
+    {
+         offset = map_addr;  // ダミーデータがなくても新たに上書きすればいい
 	}
 	else
 	{
-		// マープデータのサイズの大きさのダミーデータ(0xFFで構成されたデータ)を検索
-       offset = dummy_space_search();
-       char temp[]  ="";
-        
-	   if(offset == 0)
+		    // マープデータのサイズの大きさのダミーデータ(0xFFで構成されたデータ)を検索
+        offset = dummy_space_search();
+        char temp[]  ="";
+           
+		dummy_flag = 1;
+		// ダミーデータが見つからなかった
+	    if(offset == 0)
 		   return 0;
-       offset += 0x300000; // 0x300000以降のアドレスしかマップデータを入れられない？
-	   offset++; // 1増やして1バイト上書きしないように
-	   write_address = create_map();
-       char* buffer = ( char* )malloc(map_size+strlen(middle_boss)/2);
-	   hex_to_ascii(write_address,buffer,map_size+strlen(middle_boss) - middle_bytes);
-      // MessageBox(NULL, write_address, "情報", MB_OK);
-       fseek(fp,offset, SEEK_SET);
-	   fwrite(buffer,map_size + (strlen(middle_boss)/2) - middle_bytes,1,fp);
-	   set_dummy_bytes(map_address);
-	   change_index(offset);
-	   return 1;
-	}
 
+        offset += 0x300000; // 0x300000以降のアドレスしかマップデータを入れられない？
+	    offset++; // 1増やして1バイト上書きしないように
+	}
+	
+    char* buffer = ( char* )malloc(map_size+strlen(middle_boss)/2);
+	hex_to_ascii(write_address,buffer,map_size+strlen(middle_boss) - middle_bytes);
+    fseek(fp,offset, SEEK_SET);                       // ダミーデータの位置まで移動（すでに入っている場合は動かさない）
+	fwrite(buffer,map_size + (strlen(middle_boss)/2) - middle_bytes,1,fp);
+
+	// ダミーデータにマップデータを移した場合
+	if (dummy_flag == 1) 
+	{
+	    set_dummy_bytes(map_addr);
+	    change_index(offset);
+	}
+	return 1;
 }
 
-void load_map()
+void load_map(HWND hDlg)
 {
     
 	int i = 0;
@@ -304,7 +388,14 @@ void load_map()
 	char byte[32];
 	char buffer[64] = "";
     long offset = 0x30244A;  // 春風とともに
+	char addr[8];
 
+    HWND combo = GetDlgItem(hDlg, IDC_COMBO1);
+    int index = (int)SendMessage(combo, CB_GETCURSEL, 0, 0);
+	SendMessage(combo, CB_GETLBTEXT, index, (LPARAM)addr);  // コンボボックスから文字列を取得
+    offset = strtol(addr, NULL, 16);   // 文字列をlong型の１６進数に変換
+
+    MessageBox(NULL, addr, "CB_GETLBTEXT", MB_OK);
 	if(file_open_flag == 0) 
 	{
           MessageBox(NULL, "ROMを開いてません", "情報", MB_ICONWARNING | MB_OK);
@@ -319,6 +410,7 @@ void load_map()
         ascii_to_hex(byte,buffer,2);
         
         buffer[4] = '\0';
+		//if(strcmp(buffer,"EF3D")){
 		if(buffer[0] == 'E'  && buffer[1] == 'F' && buffer[2] == '3' && buffer[3] == 'D'){
 	        MessageBox(NULL, "found", "情報", MB_OK);
             first = ftell(fp) - offset;
@@ -346,9 +438,15 @@ void load_map()
 	}
 }
 
-int how_many_bytes_remain()
+int how_many_bytes_remain(HWND hDlg)
 {
-    long offset = 0x30244A;  // 春風とともに
+	char addr[8];
+	long offset = 0x30244A;  // 春風とともに
+	HWND combo = GetDlgItem(hDlg, IDC_COMBO1);
+    int index = (int)SendMessage(combo, CB_GETCURSEL, 0, 0);
+	SendMessage(combo, CB_GETLBTEXT, index, (LPARAM)addr);  // コンボボックスから文字列を取得
+    offset = strtol(addr, NULL, 16); 
+ 
 	int count = 0;
 	char dum[4];
 	char buffer[8] = "";
@@ -406,8 +504,8 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
         }
 		if( LOWORD(wParam) == IDC_BUTTON2)
 		{
-            load_map();
-			if(insert_mboss())
+            load_map(hDlg);
+			if(insert_mboss(hDlg))
             {
                  MessageBox(NULL, "中ボスデータを追加しました。", "情報", MB_OK);
 			}
@@ -415,7 +513,6 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 			{
                  MessageBox(NULL, "中ボスデータの追加に失敗しました。", "エラー", MB_ICONWARNING | MB_OK);
 			}
-			//change_index();
 		}
         if( LOWORD(wParam) == IDC_BUTTON3)
 		{
@@ -423,7 +520,6 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
             GetDlgItemTextA(hDlg,IDC_EDIT2,y_axis,4);
 			int index = (int)SendMessage(combo, CB_GETCURSEL, 0, 0);
 			itoa(list[index].id,id,10);
-			//MessageBox(NULL, id, "中ボスid", MB_OK);
 			
             x = strtol(x_axis, &endp, 10);
             y = strtol(y_axis, &endp, 10);
@@ -442,10 +538,13 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
             sprintf(middle_boss,"11000100000000000100%s%s%sFFFF",id,out_x,out_y);
             
 		}
-		if (LOWORD(wParam) == IDC_BUTTON1) 
+		if (LOWORD(wParam) == IDC_BUTTON1 || LOWORD(wParam) == 40002) 
 		{
 		   if( file_open())
+		   {
                SetDlgItemTextA(hDlg, IDC_STATIC2, rom_name);
+		       map_address(hDlg);
+		   }
 		}
         break;
     }
