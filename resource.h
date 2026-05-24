@@ -13,6 +13,17 @@
 #define IDC_EDIT1                       1008
 #define IDC_EDIT2                       1009
 #define IDC_COMBO1                      1010
+#define IDC_COMBO5                      1011
+#define IDC_EDIT3                       1012
+#define IDC_EDIT4                       1013
+#define IDC_COMBO3                      1014
+#define IDC_EDIT5                       1015
+#define IDC_EDIT6                       1016
+#define IDC_COMBO4                      1017
+#define IDC_CHECK1                      1018
+#define IDC_COMBO6                      1019
+#define IDC_CHECK2                      1020
+
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED

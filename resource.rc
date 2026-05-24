@@ -32,13 +32,8 @@ BEGIN
     POPUP "ファイル(&F)"
     BEGIN
         MENUITEM "ROMを開く(&O)",               40002
+        MENUITEM "中ボス生成",                  40004
         MENUITEM "終了(&X)",                    40003
-    END
-    POPUP "編集(&E)"
-    BEGIN
-        MENUITEM "切り取り(&T)",                40004
-        MENUITEM "コピー(&C)",                  40005
-        MENUITEM "貼り付け(&P)",                40006
     END
 END
 
@@ -48,28 +43,48 @@ END
 // Dialog
 //
 
-IDD_MAIN_DIALOG DIALOG DISCARDABLE  0, 0, 211, 184
+IDD_MAIN_DIALOG DIALOG DISCARDABLE  0, 0, 315, 188
 STYLE WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
 CAPTION "SDX中ボスジェネレータ"
 MENU MAIN_MENU
 FONT 9, "ＭＳ Ｐゴシック"
 BEGIN
-    DEFPUSHBUTTON   "終了",IDC_BUTTON_OK,113,154,67,14
-    PUSHBUTTON      "ROM読み込み",IDC_BUTTON1,10,26,60,12
-    COMBOBOX        IDC_COMBO2,117,72,78,30,CBS_DROPDOWNLIST | 
+    COMBOBOX        IDC_COMBO2,153,25,73,30,CBS_DROPDOWNLIST | 
                     CBS_DISABLENOSCROLL | WS_VSCROLL
-    PUSHBUTTON      "中ボス生成",IDC_BUTTON2,27,157,50,14
-    LTEXT           "ROMが読み込まれていません",IDC_STATIC2,97,25,90,9
-    LTEXT           "マップ　開始アドレス",IDC_STATIC,24,97,79,8
-    EDITTEXT        IDC_EDIT1,15,72,40,14,ES_AUTOHSCROLL
-    EDITTEXT        IDC_EDIT2,70,72,40,14,ES_AUTOHSCROLL
-    LTEXT           "x座標",IDC_STATIC,25,55,18,8
-    LTEXT           "y座標",IDC_STATIC,82,55,18,8
-    GROUPBOX        "Static",IDC_STATIC,4,42,205,101
-    PUSHBUTTON      "OK",IDC_BUTTON3,143,121,50,14
-    LTEXT           "中ボス",IDC_STATIC,135,55,20,8
-    COMBOBOX        IDC_COMBO1,22,115,72,30,CBS_DROPDOWNLIST | WS_VSCROLL | 
+    PUSHBUTTON      "中ボス生成",IDC_BUTTON2,27,168,55,14
+    LTEXT           "ROMが読み込まれていません",IDC_STATIC2,220,7,90,9
+    LTEXT           "マップ　開始アドレス",IDC_STATIC,153,92,72,8
+    EDITTEXT        IDC_EDIT1,54,25,38,13,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT2,102,25,40,13,ES_AUTOHSCROLL
+    LTEXT           "x座標",IDC_STATIC,54,11,18,8
+    LTEXT           "y座標",IDC_STATIC,102,11,18,8
+    PUSHBUTTON      "OK",IDC_BUTTON3,28,139,54,14
+    LTEXT           "中ボス",IDC_STATIC,153,11,20,8
+    COMBOBOX        IDC_COMBO1,153,110,73,30,CBS_DROPDOWNLIST | WS_VSCROLL | 
                     WS_TABSTOP
+    COMBOBOX        IDC_COMBO6,153,61,73,30,CBS_DROPDOWNLIST | WS_DISABLED | 
+                    WS_VSCROLL | WS_TABSTOP
+    CONTROL         "撃破後の処理を入れる",IDC_CHECK1,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,27,92,82,10
+    LISTBOX         IDC_LIST1,235,25,69,102,LBS_SORT | LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT3,54,61,38,13,ES_AUTOHSCROLL | WS_DISABLED
+    EDITTEXT        IDC_EDIT4,102,61,39,13,ES_AUTOHSCROLL | WS_DISABLED
+    LTEXT           "撃破後の処理",IDC_STATIC,6,67,41,8
+    LTEXT           "中ボス",IDC_STATIC,14,30,20,8
+    LTEXT           "撃破後の処理",IDC_STATIC,153,47,48,8
+    LTEXT           "x座標",IDC_STATIC,54,47,18,8
+    LTEXT           "y座標",IDC_STATIC,102,47,18,8
+    CONTROL         "雑魚敵を残す",IDC_CHECK2,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,27,115,56,10
+    LTEXT           "出現数",IDC_STATIC,109,92,22,8
+    LISTBOX         IDC_LIST2,102,110,43,47,LBS_SORT | LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "削除",IDC_BUTTON4,140,166,27,16
+    PUSHBUTTON      "追加",IDC_BUTTON5,235,138,26,15
+    PUSHBUTTON      "変更",IDC_BUTTON6,235,160,26,16
+    PUSHBUTTON      "削除",IDC_BUTTON7,269,137,27,16
+    PUSHBUTTON      "追加",IDC_BUTTON8,102,166,26,16
 END
 
 
@@ -110,13 +125,34 @@ GUIDELINES DESIGNINFO DISCARDABLE
 BEGIN
     IDD_MAIN_DIALOG, DIALOG
     BEGIN
-        RIGHTMARGIN, 209
-        BOTTOMMARGIN, 183
-        HORZGUIDE, 59
-        HORZGUIDE, 72
+        RIGHTMARGIN, 310
+        VERTGUIDE, 27
+        VERTGUIDE, 55
+        VERTGUIDE, 102
+        VERTGUIDE, 153
+        VERTGUIDE, 226
+        VERTGUIDE, 235
+        BOTTOMMARGIN, 182
+        HORZGUIDE, 35
+        HORZGUIDE, 92
+        HORZGUIDE, 110
+        HORZGUIDE, 120
     END
 END
 #endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog Info
+//
+
+IDD_MAIN_DIALOG DLGINIT
+BEGIN
+    IDC_COMBO6, 0x403, 5, 0
+0xc882, 0xb582, "\000" 
+    0
+END
 
 #endif    // Japanese resources
 /////////////////////////////////////////////////////////////////////////////
