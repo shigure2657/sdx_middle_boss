@@ -4,13 +4,7 @@
 #include "resource.h"
 
 #define MAP_NUMBERS 318
-
-void ascii_to_hex(char* byte, char* buffer, int n);
-void hex_to_ascii(char* str, char* out, int n);
-int how_many_bytes_remain(HWND hDlg);
-int insert_mboss();
-int map_address(HWND hDlg);
-int get_map_address_from_combo(HWND hDlg);
+#define MAX_BOSS_NUM 256
 
 struct middle_boss_list {
     LPCTSTR name;
@@ -27,13 +21,49 @@ struct after_defeat {
 	int defeat_id;
 };
 
+typedef struct   {
+    char action[3];  // 中ボスの行動パターン
+	char sprite[3]; // 中ボスのスプライト番号 (41-47)
+    char boss_x[6]; // 中ボスのx座標
+	char boss_y[6]; // 中ボスのy座標
+} boss_data ;
+
+typedef struct  {
+    char zako[3];     // 雑魚敵を残すか否か
+    char defeat[3];   // 撃破後の処理の有無
+	char sprite_action[3]; // 撃破後の処理のスプライトの行動パターン
+	char sprite[3]; // 撃破後のスプライト番号
+    char defeat_x[6];
+	char defeat_y[6];
+    char number[3];  // 出現数
+	boss_data boss[MAX_BOSS_NUM]; // 出現数分だけ
+} DATA ;
+
+void ascii_to_hex(char* byte, char* buffer, int n);
+void hex_to_ascii(char* str, char* out, int n);
+int how_many_bytes_remain(HWND hDlg);
+int insert_mboss();
+int map_address(HWND hDlg);
+int get_map_address_from_combo(HWND hDlg);
+void listbox_number_of_boss(HWND hDlg, DATA* data, int size);
+void add_to_list(HWND hDlg);
+
+//struct middle_data data[32];
+struct middle_boss_list list[7] = {{"アイアンマム",41},{"ジュキッド", 42},{"ポピーブロスSr", 43},{"コックカワサキ",44},{"Mr.フロスティ",45},
+	{"ボンカース",46}, {"バグジー",47}};
+struct after_defeat defeat[3] = {{"ゲートスター",1},{"ワープスター",2},{"スプライト",3}};
+DATA data[32];
+
 FILE *fp;
 long file_size;
 int file_open_flag = 0;
+int rom_flag = 0;
 int map_size = 0;
 int write_size = 0;
-int middle_bytes = 0;   // 追加前の中ボスデータのバイト数
-char middle_boss[] = "110001000000000001004374016C00FFFF";
+int middle_bytes = 0;   // 中ボスデータのバイト数
+int middle_before = 0;
+int number_of_boss = 0; // 中ボス構造体の要素数(中ボス数)
+char middle_boss[] = "";
 char x_axis[] = "0";
 char y_axis[] = "0";
 char x_axis2[] = "0";
@@ -56,7 +86,7 @@ int check_title()
     
 	if(strcmp(byte,"KIRBY SUPER DELUX") == 0 && ftell(fp) == 0x400000) 
 	{
-        MessageBox(NULL, byte, "情報", MB_OK);
+		rom_flag = 1;
 		return 1;
 	}
 	else
@@ -241,78 +271,39 @@ int size_of_middle_boss(int pos, char* map_data)
 	return byte;
 }
 
-char* create_map(HWND hDlg)
+char* create_map(HWND hDlg, char* middle_str)
 {
-	int i = 0;
     int j = 0;
 	int size = 0;  // 追加後の中ボスデータのサイズ
 	long offset = 0;
 	long insert_pos = 10;
 	char size_middle[4];
-	char addr[8];
-	char middle_extract[128];    // 中ボスが存在する場合、バイト数を表すデータを取り除く
-	
-	HWND combo = GetDlgItem(hDlg, IDC_COMBO1);
-    int index = (int)SendMessage(combo, CB_GETCURSEL, 0, 0);
-	SendMessage(combo, CB_GETLBTEXT, index, (LPARAM)addr);  // コンボボックスから文字列を取得
-    offset = strtol(addr, NULL, 16); 
+	 
+	// コンボボックスから文字列を取得
+    offset = get_map_address_from_combo(hDlg);
     
-    long new_size = map_size + strlen(middle_boss);
+    long new_size = map_size + strlen(middle_str);			 // map_sizeはascii時のサイズ
     char* buffer = ( char* )malloc(map_size+1);
-	char* buffer2 = ( char* )malloc(map_size*2+1);  // 16進数に変換するとasciiコードよりも２倍の文字数になる為 +1はnull文字
+	char* buffer2 = ( char* )malloc(map_size*2+1);		     // 16進数に変換するとasciiコードよりも２倍の文字数になる為 +1はnull文字
     char* new_buffer = (char* ) malloc(new_size + 1);
-    char* new_buffer2 = (char* ) malloc(new_size*2 + 1);  
+    char* new_buffer2 = (char* ) malloc(new_size*2 + 1);     // 16進数変換後
 	
-
-    fseek(fp,offset, SEEK_SET);								// マップデータの位置までファイルポインタを移動
-    fread(buffer, 1, map_size, fp);							// map_sizeの大きさのマップデータをbufferへ読み込み
-    insert_pos = seek_middle(buffer);						// buffer(マップデータ)内の中ボスデータを追加するアドレスを調べる
-    middle_bytes = size_of_middle_boss(insert_pos,buffer);  // 中ボスデータのサイズを取得
-    int if_middle_add = 2*middle_bytes - 4;
-	// もし中ボスデータがひとつ以上入っているなら
-	// 最初の 11 00 を取り除く
-	if (middle_bytes > 4)
-	{
-		int i = strlen(middle_boss) - 4;  // 文字数はバイト数 - 4
-		//char s[4];
-		//itoa((i+4)/2-4,s,16);
-		//MessageBox(NULL, s, "s", MB_OK);
-        strncpy(middle_extract, middle_boss + 4, i); // 30は0x11 * 2 - 4
-		middle_extract[i] = '\0';
-		strcpy(middle_boss, middle_extract);
-		size = middle_bytes + (i+4)/2-4; // 0xdは 0x11 - 0x04 
-	}
-    else
-	{
-        if_middle_add = 0;
-		size = (i+4)/2; // sizeは追加する中ボスデータのバイト数
-	}
-
-    memcpy(new_buffer, buffer, insert_pos);					// insert_pos(bufferの最初の位置から１６進数で何バイト中ボスを入れる位置まであるか）分だけbufferからnew_bufferへデータをコピー
-	ascii_to_hex(new_buffer,new_buffer2,new_size);			// new_bufferを16進数へ変換して new_buffer2へ入れる
-				// insert_pos + 元の中ボスデータサイズの位置 へmiddle_boss(中ボスデータ)を、strlenの文字分だけコピー、追加
-	memcpy(new_buffer2 + insert_pos + if_middle_add , middle_boss, strlen(middle_boss)); // 既存の中ボスデータを上書きしないように修正
-    ascii_to_hex(buffer,buffer2,new_size);										// buffer (asciiのままのマップデータ)をbuffer2へasciiへ変換して入れる
+    fseek(fp,offset, SEEK_SET);								 // マップデータの位置までファイルポインタを移動
+    fread(buffer, 1, map_size, fp);							 // map_sizeの大きさのマップデータをbufferへ読み込み
+    insert_pos = seek_middle(buffer);						 // buffer(マップデータ)内の中ボスデータを追加するアドレスを調べる(16進数)
+    middle_before = size_of_middle_boss(insert_pos,buffer);  // 中ボスデータを挿入する前の中ボスデータのサイズ(ascii)
+    middle_bytes = strlen(middle_str);                       // 中ボスデータのサイズを取得
+    //MessageBox(NULL,  middle_str, " middle_str", MB_OK);
+    memcpy(new_buffer, buffer, insert_pos);					 // insert_pos(bufferの最初の位置から１６進数で何バイト中ボスを入れる位置まであるか）分だけbufferからnew_bufferへデータをコピー
+	ascii_to_hex(new_buffer,new_buffer2,new_size);			 // new_bufferを16進数へ変換して new_buffer2へ入れる														 // insert_pos + 元の中ボスデータサイズの位置 へmiddle_boss(中ボスデータ)を、strlenの文字分だけコピー、追加
+	memcpy(new_buffer2 + insert_pos  , middle_str, strlen(middle_str)); // 既存の中ボスデータを上書きしないように修正
+    ascii_to_hex(buffer,buffer2, map_size );										// buffer (asciiのままのマップデータ)をbuffer2へasciiへ変換して入れる
 						// insert_pos + 元の中ボスデータサイズの位置 + 中ボスデータの位置に、追加する前のマップデータ+insert_pos + middle_bytesからの残りのマップデータを入れる
-	memcpy(new_buffer2 + insert_pos + if_middle_add  + strlen(middle_boss), buffer2 + insert_pos + 2*middle_bytes ,map_size*2 - insert_pos - 2*middle_bytes );	
-    
-	if (middle_bytes > 4)
-	{
-	    new_buffer2[new_size*2 - strlen(middle_boss ) ] = '\0';
-	    write_size = new_size*2 - strlen(middle_boss );
-	}
-    else
-    {
-	    new_buffer2[new_size*2 - strlen(middle_boss) - 2*middle_bytes] = '\0';		// middle_bossのサイズも２倍になってるので増えた分だけ(strlen(middle_boss)分だけ減らす
-	    write_size = new_size*2 - strlen(middle_boss) - 2*middle_bytes;          // 元の中ボスデータを上書きしたのでそれも引く( - 2*middle_bytes)
-	}
-    
-	itoa(size, size_middle, 16);
-	MessageBox(NULL, size_middle, "size_middle", MB_OK);
-     new_buffer2[insert_pos] = size_middle[0];   // 中ボスデータの最初のバイト数の変更
-	 new_buffer2[insert_pos + 1] = size_middle[1];
-    //free(buffer);
-	//free(buffer2);
+	memcpy(new_buffer2 + insert_pos + strlen(middle_str), buffer2 + insert_pos +  middle_before*2 ,map_size*2 - insert_pos -  middle_before*2 );
+	new_buffer2[insert_pos + middle_bytes + map_size*2 - insert_pos -  middle_before*2] = '\0';
+	//MessageBox(NULL,  new_buffer2, " new_buffer2", MB_OK);
+    free(buffer);
+	free(buffer2);
 	return new_buffer2;
 }
 
@@ -334,7 +325,7 @@ void change_index(int offset, HWND hDlg)
     ascii_to_hex(index,index_out,4);
     
     index_out[8] = '\0';
-	MessageBox(NULL, index_out, "index_out", MB_OK);
+	//MessageBox(NULL, index_out, "index_out", MB_OK);
 	 itoa(offset,dummy_offset,16);
 	 index_out[0] = dummy_offset[4];
 	 index_out[1] = dummy_offset[5];
@@ -343,7 +334,7 @@ void change_index(int offset, HWND hDlg)
      index_out[5] = dummy_offset[1];
 	hex_to_ascii(index_out,dummy_offset_out,8);
     dummy_offset[6] = '\0';
-	MessageBox(NULL, dummy_offset_out, "dummy_offset_out", MB_OK);
+	//MessageBox(NULL, dummy_offset_out, "dummy_offset_out", MB_OK);
     fseek(fp,index_offset, SEEK_SET);
 	fwrite(dummy_offset_out,4,1,fp);
 }
@@ -358,7 +349,7 @@ int map_address(HWND hDlg)
     int index_offset_first = 0x3F009E;
 	HWND combo = GetDlgItem(hDlg, IDC_COMBO1);
     //struct map_data map[MAP_NUMBERS];
-    SendMessage(combo, CB_RESETCONTENT, 0, (LPARAM)address);
+    SendMessage(combo, CB_RESETCONTENT, 0, (LPARAM)address); 
 
     for (i = 0; i < MAP_NUMBERS; i++)
 	{
@@ -389,29 +380,58 @@ int get_map_address_from_combo(HWND hDlg)
 	return map_addr;
 }
 
+// 中ボスコンボボックスからリストボックスに追加
+void add_to_list(HWND hDlg)
+{
+    char boss[32];
+	int index = (int)SendMessage(GetDlgItem(hDlg, IDC_COMBO2), CB_GETCURSEL, 0, 0);
+    
+	if ( index == CB_ERR)
+    {
+         MessageBox(NULL, "中ボスを選択していません", "エラー", MB_ICONWARNING | MB_OK);
+		 return;
+	}
+
+	SendMessage(GetDlgItem(hDlg, IDC_COMBO2), CB_GETLBTEXT, index, (LPARAM)boss);
+	SendMessage(GetDlgItem(hDlg, IDC_LIST1), LB_ADDSTRING, 0, (LPARAM)boss);
+	number_of_boss++; // 中ボスのカウンタを1増やす
+	return;
+}
+
+// 変更
+void change_list(HWND hDlg)
+{   
+	char boss[32];
+	int index = (int)SendMessage(GetDlgItem(hDlg, IDC_COMBO2), CB_GETCURSEL, 0, 0);
+	int index_list = (int)SendMessage(GetDlgItem(hDlg, IDC_LIST1), LB_GETCURSEL, 0, 0);
+	SendMessage(GetDlgItem(hDlg, IDC_COMBO2), CB_GETLBTEXT, index, (LPARAM)boss);
+	SendMessage(GetDlgItem(hDlg, IDC_LIST1), LB_DELETESTRING, index_list , 0);
+    SendMessage(GetDlgItem(hDlg, IDC_LIST1), LB_INSERTSTRING, index_list , (LPARAM)boss);
+	return;
+}
+
 int insert_mboss(HWND hDlg)
 {
      int offset = 0;
 	 int dummy_flag = 0;
      char* write_address;
 	 char addr[8];
-	 //int map_addr = map_address(hDlg);
 	 int map_addr = 0;
-     write_address = create_map(hDlg);
-    
-	 map_addr = get_map_address_from_combo(hDlg);
-	// 文字列をlong型の１６進数に変換
+	 int diff = 0; // 追加する前と後のバイト差
+     
+     diff = middle_bytes - middle_before;
 
+     write_address = create_map(hDlg, middle_boss);  
+	 map_addr = get_map_address_from_combo(hDlg);
     // マップデータの後に何バイトダミーデータが残っているか
-    if(how_many_bytes_remain(hDlg) > 0x11)
+    if(how_many_bytes_remain(hDlg) > diff)
 	{
 	    offset = map_addr;
        //return 0;
 	} 
 	else
-	{
-		
-		    // マープデータのサイズの大きさのダミーデータ(0xFFで構成されたデータ)を検索
+	{		
+		// マープデータのサイズの大きさのダミーデータ(0xFFで構成されたデータ)を検索
         offset = dummy_space_search(hDlg);
         char temp[]  ="";
            
@@ -423,15 +443,12 @@ int insert_mboss(HWND hDlg)
 	    offset++;			// 1増やして1バイト上書きしないように
 	}
 	
-    char* buffer = ( char* )malloc(map_size+strlen(middle_boss)/2);
+    char* buffer = ( char* )malloc(map_size*2 + 1);
 	hex_to_ascii(write_address,buffer,map_size+strlen(middle_boss) );
+	buffer[strlen(write_address)*2 + 1] = '\0';
     fseek(fp,offset, SEEK_SET);                       // ダミーデータの位置まで移動（すでに入っている場合は動かさない）
-
-	if (middle_bytes > 4)
-	    fwrite(buffer,map_size + (strlen(middle_boss)/2) - 2,1 ,fp); //　－２は　追加の場合は FF FF (2バイト分）減らす
-	else
-        fwrite(buffer,map_size + (strlen(middle_boss)/2) - 4,1 ,fp); // -4は　04 00 FF FF( 4バイト)分減らす
-   
+    
+    fwrite(buffer,map_size + middle_bytes/2 - middle_before ,1 ,fp);
 	// ダミーデータにマップデータを移した場合
 	if (dummy_flag == 1) 
 	{
@@ -459,7 +476,6 @@ int load_map(HWND hDlg)
 
     offset = get_map_address_from_combo(hDlg); // 文字列をlong型の１６進数に変換
 
-   // MessageBox(NULL, addr, "CB_GETLBTEXT", MB_OK);
 	if(file_open_flag == 0) 
 	{
           MessageBox(NULL, "ROMを開いてません", "情報", MB_ICONWARNING | MB_OK);
@@ -467,14 +483,14 @@ int load_map(HWND hDlg)
 	}
 
 	fseek(fp,offset, SEEK_SET);
-    while(i <  0xFFFF)
+    while(i <  0xFFFF) // 0xFFFF回でループを抜ける
 	{
 		fread(byte,2,1,fp);
         byte[2] = '\0';
         ascii_to_hex(byte,buffer,2);
          fseek(fp,-1, SEEK_CUR);
         buffer[4] = '\0';
-		//if(strcmp(buffer,"EF3D")){ (strcmpだとなぜかうまくいかない）
+		//if(!strcmp(buffer,"EF3D")){ 
 		if(buffer[0] == 'E'  && buffer[1] == 'F' && buffer[2] == '3' && buffer[3] == 'D'){
 	        MessageBox(NULL, "found", "情報", MB_OK);
             first = ftell(fp) - offset;
@@ -511,7 +527,7 @@ int how_many_bytes_remain(HWND hDlg)
 	char addr[8];
 	long offset = 0;
      // コンボボックスから文字列を取得
-    offset =  get_map_address_from_combo(hDlg);   // 関数化
+    offset =  get_map_address_from_combo(hDlg);
     
 	int count = 0;
 	char dum[4];
@@ -529,15 +545,327 @@ int how_many_bytes_remain(HWND hDlg)
 	return count;
 }
 
-void add_boss_to_listbox(HWND hDlg)
+void strn_null(char* dest, const char* src, size_t num)
 {
-    
-	//fread middle boss ..
+    strncpy(dest, src, num);
+	dest[num] = '\0';
 }
 
-void listbox_number_of_boss(HWND hDlg)
+ // bufは中ボスデータの文字列
+int read_middle(char* buf, DATA* data)
 {
+	int i = 0; int n = 0; 
+	int k = 0; 
+
+	char zero[10]; // 中ボスデータ判定用
+	int num = 0; // 中ボスデータの個数
+
+	// メタナイツ召喚などは除いておく...
+
+	i += 4;  // 最初の4バイトはカット
+
+
+	while (buf[i] != '\0')
+	{
+        strncpy(zero, buf + i, 10); 
+        zero[10] = '\0';
+
+		// 0が8個ある場合で判定
+		if (!strcmp(zero, "0000000000") || !strcmp(zero, "0100000000"))
+		{
+           strn_null( data[n].zako, buf + i , 2);
+		   if(atoi(data[n].zako) > 1)
+		   {    
+			   i += 2;
+			   continue;  // 1か0以外の場合違うとみなす
+		   }
+           strn_null( data[n].defeat, buf + (i + 10), 2);
+		   // ゲートスターの場合はスプライトに関するデータを省略
+		   if (!strcmp(data[n].defeat, "01"))
+		   {
+			   // スプライトに関するデータは省略
+               strn_null( data[n].defeat_x, buf + (i + 12), 4);
+			   strn_null( data[n].defeat_y, buf + (i + 16), 4);
+			   i += 20;
+		   } // ワープスター
+           else if (!strcmp(data[n].defeat, "02"))
+		   {
+               strn_null( data[n].sprite_action, buf + (i + 12), 2); // 撃破後のスプライトの行動パターン
+               strn_null( data[n].defeat_x, buf + (i + 14), 4);
+			   strn_null( data[n].defeat_y, buf + (i + 18), 4);
+			   i += 22;
+		   } // スプライト
+		   else if (!strcmp(data[n].defeat, "03"))
+		   {
+               strn_null( data[n].sprite_action, buf + (i + 12), 2); // 撃破後のスプライトの行動パターン
+			   strn_null( data[n].sprite, buf + (i + 14), 2);  // 撃破後のスプライト番号
+               strn_null( data[n].defeat_x, buf + (i + 16), 4);
+			   strn_null( data[n].defeat_y, buf + (i + 20), 4);
+			   MessageBox(NULL,data[n].sprite , "data[n].sprite", MB_OK);
+			   i += 24;
+		   }
+		   else if (!strcmp(data[n].defeat, "00"))
+		   {
+               i += 12;
+		   }
+		   else
+		   {
+               i += 2;
+			   continue;
+		   }
+		   strn_null( data[n].number, buf + i, 2);    // 中ボスの数
+           //MessageBox(NULL,data[n].number , "data[n].number", MB_OK);
+		   int j = atoi(data[n].number);
+
+		   while(1 <= j)
+		   {
+               strn_null( data[n].boss[k].action, buf + (i + 2), 2); // 中ボスの行動パターン
+               strn_null( data[n].boss[k].sprite, buf + (i + 4), 2); // 中ボスのスプライト番号
+		       strn_null( data[n].boss[k].boss_x, buf + (i + 6), 4); // 中ボスのx座標
+		       strn_null( data[n].boss[k].boss_y, buf + (i + 10), 4);
+			   i += 12;
+               j--; k++;
+		   }
+		   n++;
+		   k = 0;
+		}
+		i += 2;
+	} 
+    number_of_boss = n;
+    return 0;
+}
+
+void add_boss_to_listbox(HWND hDlg)
+{
+	char* buffer = ( char* )malloc(map_size+1);
+	
+    if(load_map(hDlg))
+	    return;
+    int offset = get_map_address_from_combo(hDlg);
+    fseek(fp,offset, SEEK_SET);	
+	fread(buffer, 1, map_size, fp); // マップデータ読み込み
+	int insert_pos = seek_middle(buffer);
+    middle_bytes = size_of_middle_boss(insert_pos,buffer);
+    char* buffer_boss = ( char* )malloc(middle_bytes+1);
+	char* buffer_boss2 = ( char* )malloc(middle_bytes*2+1);  // 16進数に変換するとasciiコードよりも２倍の文字数になる為 +1はnull文字
+	fseek(fp,offset + insert_pos / 2 , SEEK_SET);	
+    fread(buffer_boss, 1, middle_bytes, fp); // 中ボスデータ読み込み
+	ascii_to_hex(buffer_boss,buffer_boss2,middle_bytes);
+	buffer_boss2[2*middle_bytes] = '\0';
+	memset(data, 0, sizeof(data));
+	read_middle(buffer_boss2, data);
+	int n = sizeof(data) / sizeof(data[0]);
+    listbox_number_of_boss(hDlg, data, n);
     
+	return;
+}
+
+// リストボックスに中ボスを追加していく
+void listbox_number_of_boss(HWND hDlg, DATA* data, int size)
+{	
+	SendMessage(GetDlgItem(hDlg, IDC_LIST1), LB_RESETCONTENT, 0, 0); // リストをクリア
+    for ( int i = 0; i < size; i++)
+	{
+	    for ( int j = 0; j < 7; j++)
+		{
+            if (atoi(data[i].boss[0].sprite) == list[j].id)
+		        SendMessage(GetDlgItem(hDlg, IDC_LIST1), LB_ADDSTRING, 0,  (LPARAM)list[j].name);
+		}
+    }
+	return;
+}
+
+// 中ボスデータの文字列の長さを付加
+void add_length(char *str)
+{
+	char num[5];
+	char out[512] = "";
+    int l = strlen(str);
+	l = (l + 8) /2;
+    int swap = ((l & 0xFF) << 8) | (( l >> 8) & 0xFF);
+	sprintf(num, "%04X", swap);
+    strcpy(out,num);
+	strcat(out,str);
+	strcat(out,"FFFF");
+
+    if (sizeof(out) > 512)
+	{
+          MessageBox(NULL, "バッファオーバーフローが起こりました。", "エラー", MB_ICONWARNING | MB_OK);
+		  exit(0);
+	}
+	strcpy(str, out);
+    MessageBox(NULL, str, "str", MB_OK);
+	return;
+}
+
+// 構造体から最終的に書き込む中ボスデータの文字列を作成
+void create_middle (DATA* data, char *middle_str)
+{
+	int n = number_of_boss;
+	char middle_info[32][128];
+	char middle_boss[32][128];
+	char out_info[32][512];
+	char out_boss[256] = "";
+    char _out[512] = "";
+
+	for (int i = 0; i < n; i++)
+	{
+		 //MessageBox(NULL, data[i].defeat, "data[i].defeat", MB_OK);
+		 int k = atoi(data[i].number);
+		 if (!strcmp(data[i].defeat, "00"))
+		     sprintf(middle_info[i],"%s00000000%s%s",data[i].zako, data[i].defeat, data[i].number);
+		 else if (!strcmp(data[i].defeat, "01"))
+		     sprintf(middle_info[i],"%s00000000%s%s%s%s",data[i].zako, data[i].defeat, data[i].defeat_x, data[i].defeat_y, data[i].number);
+		 else if (!strcmp(data[i].defeat, "02"))
+		     sprintf(middle_info[i],"%s00000000%s00%s%s%s",data[i].zako, data[i].defeat, data[i].defeat_x, data[i].defeat_y, data[i].number);
+		 else if (!strcmp(data[i].defeat, "03"))
+		     sprintf(middle_info[i],"%s00000000%s%s%s%s%s%s",data[i].zako, data[i].defeat, data[i].sprite_action ,data[i].sprite ,data[i].defeat_x, data[i].defeat_y, data[i].number);
+         else
+		 {
+			 MessageBox(NULL, "中ボスデータ生成に失敗しました。", "エラー", MB_ICONWARNING | MB_OK);
+			 return;
+         }
+
+		 for ( int j = 0; j < k; j++)
+		 {
+             sprintf(middle_boss[j],"%s%s%s%s",data[i].boss[j].action, data[i].boss[j].sprite, data[i].boss[j].boss_x, data[i].boss[j].boss_y);
+			 strcat(out_boss, middle_boss[j]);
+		 }
+		 
+		 strcpy(out_info[i], middle_info[i]);
+		 strcat(out_info[i], out_boss);
+		 strcpy(out_boss, ""); // out_bossを空にする
+	}
+
+	for ( i = 0; i < n; i++)
+	{
+        strcat(_out, out_info[i]);
+	}
+    add_length(_out);
+	strcpy(middle_str, _out);
+}
+// sort and convert hex to decimal
+void convert_and_set(char *str, HWND hDlg, int IDC)
+{
+    char temp[5];
+	char out[6];
+	temp[0] = str[2];
+	temp[1] = str[3];
+	temp[2] = str[0];
+	temp[3] = str[1];
+	temp[4] = '\0';
+    sprintf(out, "%ld", strtol(temp, NULL, 16));
+	SetDlgItemText(hDlg, IDC, TEXT(out));
+}
+
+// sort and convert decimal to hex
+void convert_decimal_to_hex(char *str, char *out)
+{
+    int value = 0;
+	int swapped = 0;
+    value = strtoul(str, NULL, 10);  // 基数を10進数としてint型へ変換
+    swapped = ((value & 0xFF) << 8) | ((value >> 8) & 0xFF);
+    sprintf(out, "%04X", swapped);
+}
+
+// 構造体から選択中の中ボスを削除、して削除して空いた構造体配列を詰める
+void delete_struct(DATA* data, int number, HWND hDlg)
+{
+    memset(&data[number], 0, sizeof(data[0]));
+
+	for ( int i = number; i < number_of_boss; i++)
+	{
+        data[i] = data[i + 1];
+	}
+	
+}
+
+void change_struct(DATA* data, int number, HWND hDlg)
+{
+	int i = 0;
+    char boss[32], defeat_number[32];
+	char x_axis[5];
+	char y_axis[5];
+	char x_axis2[5];
+	char y_axis2[5];
+    char action_defeat[5];
+	char sprite_defeat[5];
+
+	int index = (int)SendMessage(GetDlgItem(hDlg, IDC_COMBO2), CB_GETCURSEL, 0, 0);
+	int index2 = (int)SendMessage(GetDlgItem(hDlg, IDC_COMBO6), CB_GETCURSEL, 0, 0);
+	SendMessage(GetDlgItem(hDlg, IDC_COMBO2), CB_GETLBTEXT, index, (LPARAM)boss); // boss配列に選択した中ボス文字列を格納
+	SendMessage(GetDlgItem(hDlg, IDC_COMBO6), CB_GETLBTEXT, index2, (LPARAM)defeat_number);
+    GetDlgItemTextA(hDlg,IDC_EDIT1,x_axis,4); // x_axis配列へIDC_EDIT1の文字列を格納
+    GetDlgItemTextA(hDlg,IDC_EDIT2,y_axis,4); // 
+	GetDlgItemTextA(hDlg,IDC_EDIT5,sprite_defeat,2);
+    GetDlgItemTextA(hDlg,IDC_EDIT6,action_defeat,2);
+    
+    for ( i = 0; i < sizeof(list) / sizeof(list[0]); i++)
+	{
+        if(!strcmp(boss,list[i].name))
+		{
+		    char id[4];
+		    itoa(list[i].id, id, 10);
+            strcpy(data[number].boss[0].sprite,id);
+		}
+	}
+
+	convert_decimal_to_hex(x_axis, data[number].boss[0].boss_x);
+	convert_decimal_to_hex(y_axis, data[number].boss[0].boss_y);
+	strcpy(data[number].boss[0].action, "00");
+
+	// 雑魚キャラを残すにチェックが入っている場合
+    if(BST_CHECKED == SendMessage(GetDlgItem(hDlg, IDC_CHECK2) , BM_GETCHECK , 0 , 0))
+	{
+         strcpy(data[number].zako, "01");
+	}
+	else
+	{
+         strcpy(data[number].zako, "00");
+	}
+
+	// 撃破後の処理にチェックが入っている場合
+	if(BST_CHECKED == SendMessage(GetDlgItem(hDlg, IDC_CHECK1), BM_GETCHECK , 0 , 0))
+	{
+         convert_decimal_to_hex(x_axis2, data[number].defeat_x);   // 撃破後の処理のx座標, ｙ座標
+		 convert_decimal_to_hex(y_axis2, data[number].defeat_y);
+		 
+		 for ( i = 0; i < sizeof(defeat) / sizeof(defeat[0]); i++)
+		 {
+             if(!strcmp(defeat_number,defeat[i].name))
+			 {
+                  char id_defeat[4];
+		          itoa(defeat[i].defeat_id, id_defeat, 10);
+                  strcpy(data[number].defeat,id_defeat); 
+				  data[number].defeat[1] = data[number].defeat[0];
+                  data[number].defeat[0] = '0';
+			 }
+		 }
+         MessageBox(NULL, data[number].defeat, "data[number].defeat", MB_OK);
+		 if (!strcmp(data[number].defeat,"01"))
+		 {
+             // ゲートスターの場合はスプライトのアクションは省略
+		 }
+		 else if (!strcmp(data[number].defeat,"02"))
+		 {
+              strcpy(data[number].sprite_action, "00"); //ワープスターの場合はスプライトのアクションは00
+			  // スプライトは省略
+		 } // 特定のスプライト
+		 else if (!strcmp(data[number].defeat,"03"))
+		 {
+              strcpy(data[number].sprite_action, action_defeat);
+			  strcpy(data[number].sprite, sprite_defeat);
+			  MessageBox(NULL, data[number].sprite, "data[number].sprite", MB_OK);
+		 }
+         
+	} // 撃破後の処理なし
+	else
+	{
+         strcpy(data[number].defeat, "00");
+	}
+	strcpy(data[number].number,"01");  // 出現数
+
+	//number++;
 }
 
 // ダイアログのプロシージャ
@@ -551,30 +879,17 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 
     static CONST LPSTR rom_name = TEXT("KIRBY SUPER DELUX");
     char *endp;
-	int x = 0;
-	int y = 0;
-	int x2 = 0;
-	int y2 = 0;
-	char x_hex[4], y_hex[4];
-	char x_hex2[4], y_hex2[4];
-	char out_x[5], out_y[5];  // 中ボスの座標
-	char out_x2[5], out_y2[5]; // 撃破後のスプライトの座標
 	char id[4];
 	char defeat_id[2];
 	int size_x, size_y;
 	int i = 0;
 	int l = 0;
-    int value_x, value_y, value_x2, value_y2;
-    int swapped_x,swapped_y,swapped_x2,swapped_y2;
 	int index = 0;
 	int zako = 0;
 	char sprite_action[2], sprite[2];
 
-	struct middle_boss_list list[7] = {{"アイアンマム",41},{"ジュキッド", 42},{"ポピーブロスSr", 43},{"コックカワサキ",44},{"Mr.フロスティ",45},
-	{"ボンカース",46}, {"バグジー",47}};
 	LPCSTR number[3] = {"1","2","3"};
-	struct after_defeat defeat[3] = {{"ゲートスター",1},{"ワープスター",2},{"クリアスター",3}};
-
+	
     switch (message)
     {
     case WM_INITDIALOG:
@@ -597,7 +912,7 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
                 fclose(fp);
             return (INT_PTR)TRUE;
         }
-		if( LOWORD(wParam) == IDC_BUTTON2 || 40004)
+		if( LOWORD(wParam) == IDC_BUTTON2 )
 		{
 			if (SendMessage( GetDlgItem(hDlg, IDC_COMBO1), CB_GETCURSEL, 0, 0) == -1)
 			{
@@ -619,115 +934,28 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 
             map_address(hDlg);
 		}
+
 		if ( LOWORD(wParam) == IDC_CHECK1)
 		{
+			// 撃破後の処理のチェックが入っているなら 
             if (SendMessage(checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED)
 			{
-                EnableWindow(GetDlgItem(hDlg, IDC_EDIT3), TRUE);
-				EnableWindow(GetDlgItem(hDlg, IDC_EDIT4), TRUE);
-				EnableWindow(GetDlgItem(hDlg, IDC_COMBO6), TRUE);
-			}
-			else
-			{
-                EnableWindow(GetDlgItem(hDlg, IDC_EDIT3), FALSE);
-				EnableWindow(GetDlgItem(hDlg, IDC_EDIT4), FALSE);
-				EnableWindow(GetDlgItem(hDlg, IDC_COMBO6), FALSE);
+                //EnableWindow(GetDlgItem(hDlg, IDC_EDIT3), TRUE);
 			}
 		}
         if( LOWORD(wParam) == IDC_BUTTON3)
 		{
-            GetDlgItemTextA(hDlg,IDC_EDIT1,x_axis,4); // 1体目の中ボスのx座標 10進数
-            GetDlgItemTextA(hDlg,IDC_EDIT2,y_axis,4); // 1体目の中ボスのy座標 10進数
-			GetDlgItemTextA(hDlg,IDC_EDIT3,x_axis2,4); // 1体目の中ボスの撃破後の処理のx座標 10進数
-            GetDlgItemTextA(hDlg,IDC_EDIT4,y_axis2,4); // 1体目の中ボスの撃破後の処理のy座標 10進数
-
-			int index = (int)SendMessage(GetDlgItem(hDlg, IDC_COMBO2), CB_GETCURSEL, 0, 0); // コンボボックスに設定したマップアドレスの取得
-			int index2 = (int)SendMessage(GetDlgItem(hDlg, IDC_COMBO6), CB_GETCURSEL, 0, 0); 
-			itoa(list[index].id,id, 10);
-			itoa(defeat[index2].defeat_id, defeat_id, 10);
-
-			if (index == NULL)
-                MessageBox(NULL, "error", "id", MB_OK);
-             if(id == '\0')
-			 {
-                  MessageBox(NULL, "中ボスを選択してください。", "エラー", MB_ICONWARNING | MB_OK);
-				  break;
-			 }
-			
-			if (x_axis[0] == '\0' || y_axis[0] == '\0')
+          
+		}
+        if (LOWORD(wParam) == IDC_BUTTON9)
+		{
+			if (SendMessage( GetDlgItem(hDlg, IDC_COMBO1), CB_GETCURSEL, 0, 0) == -1)
 			{
-                MessageBox(NULL, "座標を入力してください。", "エラー", MB_ICONWARNING | MB_OK);
-			    break;
+                MessageBox(NULL, "マップアドレスを追加してください。", "エラー", MB_ICONWARNING | MB_OK);
+				break;
 			}
 
-			// int型へ変換
-            x = strtol(x_axis, &endp, 10);
-            y = strtol(y_axis, &endp, 10);
-			x2 = strtol(x_axis2, &endp, 10);
-            y2 = strtol(y_axis2, &endp, 10);
-
-			// 16進数へ変換
-            sprintf(x_hex,"%x",x);
-            sprintf(y_hex,"%x",y);
-			sprintf(x_hex2,"%x",x2);
-            sprintf(y_hex2,"%x",y2);
-
-			// int型へ変換
-            value_x = strtoul(x_hex, NULL, 16);
-            value_y = strtoul(y_hex, NULL, 16);
-			value_x2 = strtoul(x_hex2, NULL, 16);
-            value_y2 = strtoul(y_hex2, NULL, 16);
-
-			// 0を詰める (FF → 00FF)
-            swapped_x = ((value_x & 0xFF) << 8) | ((value_x >> 8) & 0xFF);
-			swapped_y = ((value_y & 0xFF) << 8) | ((value_y >> 8) & 0xFF);
-			swapped_x2 = ((value_x2 & 0xFF) << 8) | ((value_x2 >> 8) & 0xFF);
-			swapped_y2 = ((value_y2 & 0xFF) << 8) | ((value_y2 >> 8) & 0xFF);
-
-			sprintf(out_x, "%04X", swapped_x);
-			sprintf(out_y, "%04X", swapped_y);
-			sprintf(out_x2, "%04X", swapped_x2);
-			sprintf(out_y2, "%04X", swapped_y2);
-
-			// 雑魚敵を残すにチェックが入っている場合
-			if(BST_CHECKED == SendMessage(GetDlgItem(hDlg, IDC_CHECK2) , BM_GETCHECK , 0 , 0))
-			{
-                 zako = 1;
-			}
-            
-			int number = (int)SendMessage(GetDlgItem(hDlg, IDC_COMBO6), CB_GETCURSEL, 0, 0);
-            number++;    
-			 // ワープスター
-			if (number == 2)
-			{
-                strcpy(sprite_action, "00"); // 行動パターンは00
-				strcpy(sprite, "84");    // 撃破後の処理をワープスターにしたときのスプライト番号はなぜか84
-                MessageBox(NULL, sprite_action, "sprite_action", MB_OK);
-			} // クリアスター
-			else if (number == 3)
-			{
-                strcpy(sprite_action, "00"); // 行動パターンは00
-                strcpy(sprite, "73");     // スプライト番号は73
-			}
-            
-			// 撃破後の処理にチェックが入っている場合
-			if(BST_CHECKED == SendMessage(checkbox , BM_GETCHECK , 0 , 0))
-			{
-				// 撃破後の処理がゲートスターの場合
-				if ( number == 1)
-				{
-                    sprintf(middle_boss,"13000%d000000000%d%s%s0100%s%s%sFFFF",zako ,number , sprite_action, sprite, id ,out_x, out_y);
-				}// それ以外
-				else 
-				{
-                    sprintf(middle_boss,"17000%d000000000%d%s%s%s%s0100%s%s%sFFFF",zako ,number , sprite_action, sprite, out_x2 ,out_y2 ,id ,out_x, out_y);
-				}
-			}
-            else
-			{
-                 sprintf(middle_boss,"11000%d00000000000100%s%s%sFFFF",zako ,id,out_x,out_y);
-			}
-            
+             add_boss_to_listbox(hDlg);
 		}
 		if (LOWORD(wParam) == IDC_BUTTON1 || LOWORD(wParam) == 40002) 
 		{
@@ -736,6 +964,108 @@ BOOL CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
                SetDlgItemTextA(hDlg, IDC_STATIC2, rom_name);
 		       map_address(hDlg);
 		   }
+		} 
+		if (LOWORD(wParam) == 40004)
+		{
+            if (!rom_flag)
+			{
+                 MessageBox(NULL, "ROMを開いてません", "エラー", MB_ICONWARNING | MB_OK);
+			}
+
+			if (SendMessage( GetDlgItem(hDlg, IDC_COMBO1), LB_GETCURSEL, 0, 0) == LB_ERR)
+			{
+                MessageBox(NULL, "中ボスデータを読み込んでください。", "エラー", MB_ICONWARNING | MB_OK);
+				break;
+			}
+            create_middle(data, middle_boss);
+			break;
+		}
+		//追加ボタン
+		if (LOWORD(wParam) == IDC_BUTTON5)
+		{
+            int n = sizeof(data) / sizeof(data[0]);
+
+            if (SendMessage( GetDlgItem(hDlg, IDC_COMBO1), CB_GETCURSEL, 0, 0) == -1)
+			{
+                MessageBox(NULL, "マップアドレスを追加してください。", "エラー", MB_ICONWARNING | MB_OK);
+				break;
+			}
+
+			if (SendMessage( GetDlgItem(hDlg, IDC_COMBO1), LB_GETCURSEL, 0, 0) == LB_ERR)
+			{
+                MessageBox(NULL, "中ボスデータを読み込んでください。", "エラー", MB_ICONWARNING | MB_OK);
+				break;
+			}
+            
+			/* 
+			   構造体に新たにユーザから設定されたデータに基づき中ボスデータを追加...
+			*/
+			change_struct(data, number_of_boss, hDlg);
+			// リストボックスの最後に設定した中ボスを追加
+            add_to_list(hDlg);
+			break;
+		} // 変更ボタン
+        if (LOWORD(wParam) == IDC_BUTTON6)
+		{
+			/* 
+			   構造体に新たにユーザから設定されたデータに基づき中ボスデータを変更...
+			*/
+            index = SendMessage(GetDlgItem(hDlg, IDC_LIST1), LB_GETCURSEL, 0, 0);
+            change_struct(data, index, hDlg);
+			//  リストボックスで選択された中ボスを変更
+			change_list(hDlg);
+            break;
+		} // 削除ボタン
+		if (LOWORD(wParam) == IDC_BUTTON7)
+		{
+			/*
+               構造体から中ボスデータを削除
+            */
+			index = SendMessage(GetDlgItem(hDlg, IDC_LIST1), LB_GETCURSEL, 0, 0);
+			delete_struct(data, index, hDlg);                // リストボックスで選択された中ボスを削除
+			int n = sizeof(data) / sizeof(data[0]);
+            listbox_number_of_boss(hDlg, data, n);
+            number_of_boss--;
+            break;
+		} // リストボックスの要素を選択したときにコンボボックスとエディタボックスの内容を読み込んだ中ボスデータに変更
+		if (LOWORD(wParam) == IDC_LIST1)
+		{
+             if (HIWORD(wParam) == LBN_SELCHANGE)
+			 {
+                int index = (int)SendDlgItemMessage(hDlg, IDC_LIST1, LB_GETCURSEL, 0, 0); // リストボックス内の中ボスのリストのうち
+
+                // エディットボックスへ設定
+				convert_and_set(data[index].boss[0].boss_x,hDlg, IDC_EDIT1);
+                convert_and_set(data[index].boss[0].boss_y,hDlg, IDC_EDIT2);
+                // コンボボックスへ設定
+                int sprite = atoi(data[index].boss[0].sprite);
+				int _defeat = atoi(data[index].defeat);
+
+				for ( int i = 0; i < sizeof(data) / sizeof(data[0]); i++)
+				{
+                     if ( sprite == list[i].id)
+						 break;
+				}
+
+				SendDlgItemMessage(hDlg, IDC_COMBO2, CB_SETCURSEL, i, 0);
+
+                for ( i = 0; i < sizeof(data) / sizeof(data[0]); i++)
+				{
+                     if ( _defeat == defeat[i].defeat_id)
+						 break;
+				}
+                SendDlgItemMessage(hDlg, IDC_COMBO6, CB_SETCURSEL, i, 0);
+
+				convert_and_set(data[index].defeat_x,hDlg, IDC_EDIT3);
+                convert_and_set(data[index].defeat_y,hDlg, IDC_EDIT4);
+			 }
+		}
+		if (LOWORD(wParam) == IDC_COMBO6)
+		{
+            if (HIWORD(wParam) == CBN_SELCHANGE)
+			{
+                 
+			}
 		}
         break;
     }
